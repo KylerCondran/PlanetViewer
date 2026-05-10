@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sphere</title>
+
+<style>
+    html, body {
+        margin: 0;
+        overflow: hidden;
+        background: #0b1020;
+        color: white;
+        font-family: sans-serif;
+    }
+
+    canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0,0,0,0.5);
+        padding: 10px;
+        border-radius: 8px;
+        line-height: 1.5;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<canvas id="canvas2"></canvas>
+
+<div id="ui">
+    <b>Sphere</b><br>
+    Drag mouse = rotate camera<br>
+	<button onclick="loadEarth()">Earth</button>
+	<button onclick="loadMoon()">Moon</button>
+	<button onclick="loadMars()">Mars</button>
+	<br>
+	<button onclick="zoomIn()">+</button>
+	<button onclick="zoomOut()">-</button>
+</div>
+
+<script>
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+const SUBDIVISIONS = 7;
+const SHOW_LABELS = false;
+let needsRender = false;
+let globeRotation = [0, 0, 0, 1];
+
+// =====================================================
+// BUTTONS
+// =====================================================
+
+function loadMoon() {
+    earthImage.src = "~/img/moon.jpg"
+}
+
+function loadEarth() {
+    earthImage.src = "~/img/earth.jpg"
+}
+
+function loadMars() {
+    earthImage.src = "~/img/mars.jpg"
+}
+
+function zoomIn() {
+    camera.distance--;
+	requestRender();
+}
+
+function zoomOut() {
+    camera.distance++;
+	requestRender();
+}
+
+// =====================================================
+// CANVAS
+// =====================================================
+
+const earthImage = new Image();
+earthImage.src = "~img/earth.jpg";
+
+let earthReady = false;
+
+const textureCanvas = document.getElementById("canvas2");
+const textureCtx = textureCanvas.getContext("2d");
+
+earthImage.onload = () => {
+    earthReady = true;
+    textureCanvas.width = earthImage.width;
+    textureCanvas.height = earthImage.height;
+    textureCtx.drawImage(earthImage, 0, 0);
+    requestRender();
+};
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    requestRender();
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+// =====================================================
+// VECTOR MATH
+// =====================================================
+
+function vec3(x, y, z) {
+    return { x, y, z };
+}
+
+function add(a, b) {
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+function sub(a, b) {
+    return vec3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+function mul(v, s) {
+    return vec3(v.x * s, v.y * s, v.z * s);
+}
+
+function dot(a, b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function cross(a, b) {
+    return vec3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+
+function length(v) {
+    return Math.sqrt(dot(v, v));
+}
+
+function normalize(v) {
+    const len = length(v);
+    return vec3(v.x / len, v.y / len, v.z / len);
+}
+
+function lerp(a, b, t) {
+    return vec3(
+        a.x + (b.x - a.x) * t,
+        a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t
+    );
+}
+
+function quatFromAxisAngle(axis, angle) {
+
+    const half = angle * 0.5;
+    const s = Math.sin(half);
+
+    return [
+        axis[0] * s,
+        axis[1] * s,
+        axis[2] * s,
+        Math.cos(half)
+    ];
+}
+
+function multiplyQuat(a, b) {
+
+    return [
+        a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
+        a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
+        a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
+        a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2]
+    ];
+}
+
+function rotateVectorByQuat(v, q) {
+
+    const x = v[0], y = v[1], z = v[2];
+
+    const qx = q[0];
+    const qy = q[1];
+    const qz = q[2];
+    const qw = q[3];
+
+    // quat * vec
+    const ix =  qw*x + qy*z - qz*y;
+    const iy =  qw*y + qz*x - qx*z;
+    const iz =  qw*z + qx*y - qy*x;
+    const iw = -qx*x - qy*y - qz*z;
+
+    // result * inverse quat
+    return [
+        ix*qw + iw*-qx + iy*-qz - iz*-qy,
+        iy*qw + iw*-qy + iz*-qx - ix*-qz,
+        iz*qw + iw*-qz + ix*-qy - iy*-qx
+    ];
+}
+
+function rotateVecByQuat(v, q) {
+
+    const x = v.x;
+    const y = v.y;
+    const z = v.z;
+
+    const qx = q[0];
+    const qy = q[1];
+    const qz = q[2];
+    const qw = q[3];
+
+    const ix =  qw*x + qy*z - qz*y;
+    const iy =  qw*y + qz*x - qx*z;
+    const iz =  qw*z + qx*y - qy*x;
+    const iw = -qx*x - qy*y - qz*z;
+
+    return {
+        x: ix*qw + iw*-qx + iy*-qz - iz*-qy,
+        y: iy*qw + iw*-qy + iz*-qx - ix*-qz,
+        z: iz*qw + iw*-qz + ix*-qy - iy*-qx
+    };
+}
+
+// =====================================================
+// ICOSAHEDRON
+// =====================================================
+
+function createIcosahedron() {
+
+    const t = (1 + Math.sqrt(5)) / 2;
+
+    let vertices = [
+        vec3(-1,  t,  0),
+        vec3( 1,  t,  0),
+        vec3(-1, -t,  0),
+        vec3( 1, -t,  0),
+
+        vec3( 0, -1,  t),
+        vec3( 0,  1,  t),
+        vec3( 0, -1, -t),
+        vec3( 0,  1, -t),
+
+        vec3( t,  0, -1),
+        vec3( t,  0,  1),
+        vec3(-t,  0, -1),
+        vec3(-t,  0,  1)
+    ];
+
+    vertices = vertices.map(normalize);
+
+    const faces = [
+        [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
+        [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+        [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
+        [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
+    ];
+
+    return { vertices, faces };
+}
+
+// =====================================================
+// SUBDIVISION
+// =====================================================
+
+function subdivide(vertices, faces, level = 2) {
+
+    let currentVertices = [...vertices];
+    let currentFaces = [...faces];
+
+    function midpoint(a, b, cache) {
+
+        const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+
+        if (cache[key] !== undefined)
+            return cache[key];
+
+        const mid = normalize(
+            lerp(currentVertices[a], currentVertices[b], 0.5)
+        );
+
+        const index = currentVertices.length;
+
+        currentVertices.push(mid);
+
+        cache[key] = index;
+
+        return index;
+    }
+
+    for (let i = 0; i < level; i++) {
+
+        const newFaces = [];
+        const cache = {};
+
+        for (let f = 0; f < currentFaces.length; f++) {
+
+            const face = currentFaces[f];
+
+            const a = face[0];
+            const b = face[1];
+            const c = face[2];
+
+            const ab = midpoint(a, b, cache);
+            const bc = midpoint(b, c, cache);
+            const ca = midpoint(c, a, cache);
+
+            newFaces.push([a,ab,ca]);
+            newFaces.push([b,bc,ab]);
+            newFaces.push([c,ca,bc]);
+            newFaces.push([ab,bc,ca]);
+        }
+
+        currentFaces = newFaces;
+    }
+
+    return {
+        vertices: currentVertices,
+        faces: currentFaces
+    };
+}
+
+// =====================================================
+// BUILD DUAL
+// =====================================================
+
+let faceCenters = [];
+
+function buildDual(vertices, faces) {
+
+    faceCenters = [];
+
+    for (let i = 0; i < faces.length; i++) {
+
+        const face = faces[i];
+
+        const center = normalize(
+            mul(
+                add(
+                    add(vertices[face[0]], vertices[face[1]]),
+                    vertices[face[2]]
+                ),
+                1 / 3
+            )
+        );
+
+        faceCenters.push(center);
+    }
+
+    const adjacency = [];
+
+    for (let i = 0; i < vertices.length; i++) {
+        adjacency.push([]);
+    }
+
+    for (let fi = 0; fi < faces.length; fi++) {
+
+        const face = faces[fi];
+
+        adjacency[face[0]].push(fi);
+        adjacency[face[1]].push(fi);
+        adjacency[face[2]].push(fi);
+    }
+
+    const cells = [];
+
+    for (let vi = 0; vi < adjacency.length; vi++) {
+
+        const faceIndices = adjacency[vi];
+        const center = vertices[vi];
+
+        const up = normalize(center);
+
+        let tangent = cross(up, vec3(0,1,0));
+
+        if (length(tangent) < 0.01) {
+            tangent = cross(up, vec3(1,0,0));
+        }
+
+        tangent = normalize(tangent);
+
+        const bitangent = cross(up, tangent);
+
+        const pts = [];
+
+        for (let i = 0; i < faceIndices.length; i++) {
+
+            const fi = faceIndices[i];
+
+            const p = faceCenters[fi];
+
+            const local = sub(p, center);
+
+            const angle = Math.atan2(
+                dot(local, bitangent),
+                dot(local, tangent)
+            );
+
+            pts.push({
+                fi,
+                angle
+            });
+        }
+
+        pts.sort((a,b)=>a.angle-b.angle);
+
+        cells.push({
+            center,
+            polygon: pts.map(p => p.fi),
+            pentagon: pts.length === 5,
+            id: vi
+        });
+    }
+
+    return cells;
+}
+
+// =====================================================
+// CAMERA
+// =====================================================
+
+const camera = {
+    yaw: 0,
+    pitch: 0,
+    distance: 2
+};
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener("mousedown", e => {
+
+    dragging = true;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+window.addEventListener("mouseup", () => {
+    dragging = false;
+});
+
+window.addEventListener("mousemove", e => {
+
+	if (!dragging) return;
+
+	const dx = e.clientX - lastX;
+	const dy = e.clientY - lastY;
+
+	const rotY = quatFromAxisAngle([0, 1, 0], -dx * 0.005);
+
+	// rotate around globe-local X axis
+	const right = rotateVectorByQuat([1, 0, 0], globeRotation);
+
+	const rotX = quatFromAxisAngle(right, -dy * 0.005);
+
+	// apply incrementally
+	globeRotation = multiplyQuat(rotX, globeRotation);
+	globeRotation = multiplyQuat(rotY, globeRotation);
+	
+
+
+	lastX = e.clientX;
+	lastY = e.clientY;
+
+	requestRender();
+});
+
+// =====================================================
+// GEOMETRY
+// =====================================================
+
+const ico = createIcosahedron();
+
+const geo = subdivide(
+    ico.vertices,
+    ico.faces,
+    SUBDIVISIONS
+);
+
+const cells = buildDual(
+    geo.vertices,
+    geo.faces
+);
+
+// =====================================================
+// RENDER ON DEMAND
+// =====================================================
+
+function requestRender() {
+    if (!needsRender) {
+        needsRender = true;
+        requestAnimationFrame(renderLoop);
+    }
+}
+
+function renderLoop() {
+    if (!needsRender) return;
+
+    needsRender = false;
+    render();
+}
+
+// =====================================================
+// PROJECTION
+// =====================================================
+
+function render() {
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+
+
+    // ---------------------------------------------
+    // PROJECT FACE CENTERS ONCE
+    // ---------------------------------------------
+
+    const projected = new Array(faceCenters.length);
+
+    for (let i = 0; i < faceCenters.length; i++) {
+
+        const v = faceCenters[i];
+
+		const r = rotateVecByQuat(v, globeRotation);
+
+		const x = r.x;
+		const y = r.y;
+		const z = r.z + camera.distance;
+
+        const scale = 500 / z;
+
+        projected[i] = {
+            x: canvas.width * 0.5 + x * scale,
+            y: canvas.height * 0.5 - y * scale,
+            z
+        };
+    }
+
+    // ---------------------------------------------
+    // BUILD DRAW LIST
+    // ---------------------------------------------
+
+    const drawable = [];
+
+    for (let i = 0; i < cells.length; i++) {
+
+        const cell = cells[i];
+
+        const poly = cell.polygon;
+
+        const pts = [];
+
+        let avgZ = 0;
+
+        for (let j = 0; j < poly.length; j++) {
+
+            const p = projected[poly[j]];
+
+            pts.push(p);
+
+            avgZ += p.z;
+        }
+
+        avgZ /= poly.length;
+
+        if (!isFaceVisible(pts))
+            continue;
+
+        drawable.push({
+            pts,
+            avgZ,
+            cell
+        });
+    }
+
+    drawable.sort((a,b)=>b.avgZ-a.avgZ);
+
+    // ---------------------------------------------
+    // DRAW
+    // ---------------------------------------------
+
+    for (let i = 0; i < drawable.length; i++) {
+
+        const item = drawable[i];
+
+        const pts = item.pts;
+        const cell = item.cell;
+
+        ctx.beginPath();
+
+        ctx.moveTo(pts[0].x, pts[0].y);
+
+        for (let j = 1; j < pts.length; j++) {
+            ctx.lineTo(pts[j].x, pts[j].y);
+        }
+
+        ctx.closePath();
+
+        //ctx.fillStyle = cell.id % 2 === 0 ? "#f59e0b": "#22c55e";
+		const uv = sphereToUV(cell.center);
+		ctx.fillStyle = sampleTexture(uv.u, uv.v);
+
+        ctx.fill();
+
+        //ctx.strokeStyle = "#081018";
+        //ctx.lineWidth = 0;
+        //ctx.stroke();
+
+        // -----------------------------------------
+        // OPTIONAL LABELS
+        // -----------------------------------------
+
+        if (SHOW_LABELS) {
+
+            let centerX = 0;
+            let centerY = 0;
+
+            for (let j = 0; j < pts.length; j++) {
+                centerX += pts[j].x;
+                centerY += pts[j].y;
+            }
+
+            centerX /= pts.length;
+            centerY /= pts.length;
+
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.fillText(cell.id, centerX, centerY);
+        }
+    }
+}
+
+function sphereToUV(v) {
+
+    const lon = Math.atan2(v.z, v.x);
+    const lat = Math.asin(v.y);
+
+    //const u = 0.5 + lon / (2 * Math.PI);
+	let u = 0.5 + lon / (Math.PI * 2) + 0.25;
+	u = ((u % 1) + 1) % 1;
+    const vv = 0.5 - lat / Math.PI;
+
+    return { u, v: vv };
+}
+
+function sampleTexture(u, v) {
+
+    if (!earthReady)
+        return "#888";
+
+    const x = Math.floor(u * textureCanvas.width);
+    const y = Math.floor(v * textureCanvas.height);
+
+    const data = textureCtx.getImageData(x, y, 1, 1).data;
+	//console.log('1');
+    return `rgb(${data[0]},${data[1]},${data[2]})`;
+}
+
+// =====================================================
+// BACKFACE CULLING
+// =====================================================
+
+function isFaceVisible(pts) {
+
+    let sum = 0;
+
+    for (let i = 0; i < pts.length; i++) {
+
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % pts.length];
+
+        sum += (p2.x - p1.x) * (p2.y + p1.y);
+    }
+
+    return sum < 0;
+}
+
+// =====================================================
+// INITIAL RENDER
+// =====================================================
+
+requestRender();
+
+</script>
+
+</body>
+</html>
