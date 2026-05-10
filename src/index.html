@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sphere</title>
+<title>Planet Viewer</title>
 
 <style>
     html, body {
@@ -38,7 +38,7 @@
 <canvas id="canvas2"></canvas>
 
 <div id="ui">
-    <b>Sphere</b><br>
+    <b>Planet Viewer</b><br>
     Drag mouse = rotate camera<br>
 	<button onclick="loadEarth()">Earth</button>
 	<button onclick="loadMoon()">Moon</button>
@@ -116,6 +116,58 @@ function resize() {
 
 window.addEventListener("resize", resize);
 resize();
+
+// =====================================================
+// CAMERA
+// =====================================================
+
+const camera = {
+    yaw: 0,
+    pitch: 0,
+    distance: 2
+};
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener("mousedown", e => {
+
+    dragging = true;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+window.addEventListener("mouseup", () => {
+    dragging = false;
+});
+
+window.addEventListener("mousemove", e => {
+
+    if (!dragging) return;
+
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+
+    const rotY = quatFromAxisAngle([0, 1, 0], -dx * 0.005);
+
+    // rotate around globe-local X axis
+    const right = rotateVectorByQuat([1, 0, 0], globeRotation);
+
+    const rotX = quatFromAxisAngle(right, -dy * 0.005);
+
+    // apply incrementally
+    globeRotation = multiplyQuat(rotX, globeRotation);
+    globeRotation = multiplyQuat(rotY, globeRotation);
+
+
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    requestRender();
+});
 
 // =====================================================
 // VECTOR MATH
@@ -236,7 +288,7 @@ function rotateVecByQuat(v, q) {
 }
 
 // =====================================================
-// ICOSAHEDRON
+// GEOMETRY
 // =====================================================
 
 function createIcosahedron() {
@@ -244,37 +296,33 @@ function createIcosahedron() {
     const t = (1 + Math.sqrt(5)) / 2;
 
     let vertices = [
-        vec3(-1,  t,  0),
-        vec3( 1,  t,  0),
-        vec3(-1, -t,  0),
-        vec3( 1, -t,  0),
+        vec3(-1, t, 0),
+        vec3(1, t, 0),
+        vec3(-1, -t, 0),
+        vec3(1, -t, 0),
 
-        vec3( 0, -1,  t),
-        vec3( 0,  1,  t),
-        vec3( 0, -1, -t),
-        vec3( 0,  1, -t),
+        vec3(0, -1, t),
+        vec3(0, 1, t),
+        vec3(0, -1, -t),
+        vec3(0, 1, -t),
 
-        vec3( t,  0, -1),
-        vec3( t,  0,  1),
-        vec3(-t,  0, -1),
-        vec3(-t,  0,  1)
+        vec3(t, 0, -1),
+        vec3(t, 0, 1),
+        vec3(-t, 0, -1),
+        vec3(-t, 0, 1)
     ];
 
     vertices = vertices.map(normalize);
 
     const faces = [
-        [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
-        [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
-        [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
-        [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
+        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+        [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+        [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+        [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]
     ];
 
     return { vertices, faces };
 }
-
-// =====================================================
-// SUBDIVISION
-// =====================================================
 
 function subdivide(vertices, faces, level = 2) {
 
@@ -318,10 +366,10 @@ function subdivide(vertices, faces, level = 2) {
             const bc = midpoint(b, c, cache);
             const ca = midpoint(c, a, cache);
 
-            newFaces.push([a,ab,ca]);
-            newFaces.push([b,bc,ab]);
-            newFaces.push([c,ca,bc]);
-            newFaces.push([ab,bc,ca]);
+            newFaces.push([a, ab, ca]);
+            newFaces.push([b, bc, ab]);
+            newFaces.push([c, ca, bc]);
+            newFaces.push([ab, bc, ca]);
         }
 
         currentFaces = newFaces;
@@ -332,10 +380,6 @@ function subdivide(vertices, faces, level = 2) {
         faces: currentFaces
     };
 }
-
-// =====================================================
-// BUILD DUAL
-// =====================================================
 
 let faceCenters = [];
 
@@ -384,10 +428,10 @@ function buildDual(vertices, faces) {
 
         const up = normalize(center);
 
-        let tangent = cross(up, vec3(0,1,0));
+        let tangent = cross(up, vec3(0, 1, 0));
 
         if (length(tangent) < 0.01) {
-            tangent = cross(up, vec3(1,0,0));
+            tangent = cross(up, vec3(1, 0, 0));
         }
 
         tangent = normalize(tangent);
@@ -415,7 +459,7 @@ function buildDual(vertices, faces) {
             });
         }
 
-        pts.sort((a,b)=>a.angle-b.angle);
+        pts.sort((a, b) => a.angle - b.angle);
 
         cells.push({
             center,
@@ -427,62 +471,6 @@ function buildDual(vertices, faces) {
 
     return cells;
 }
-
-// =====================================================
-// CAMERA
-// =====================================================
-
-const camera = {
-    yaw: 0,
-    pitch: 0,
-    distance: 2
-};
-
-let dragging = false;
-let lastX = 0;
-let lastY = 0;
-
-canvas.addEventListener("mousedown", e => {
-
-    dragging = true;
-
-    lastX = e.clientX;
-    lastY = e.clientY;
-});
-
-window.addEventListener("mouseup", () => {
-    dragging = false;
-});
-
-window.addEventListener("mousemove", e => {
-
-	if (!dragging) return;
-
-	const dx = e.clientX - lastX;
-	const dy = e.clientY - lastY;
-
-	const rotY = quatFromAxisAngle([0, 1, 0], -dx * 0.005);
-
-	// rotate around globe-local X axis
-	const right = rotateVectorByQuat([1, 0, 0], globeRotation);
-
-	const rotX = quatFromAxisAngle(right, -dy * 0.005);
-
-	// apply incrementally
-	globeRotation = multiplyQuat(rotX, globeRotation);
-	globeRotation = multiplyQuat(rotY, globeRotation);
-	
-
-
-	lastX = e.clientX;
-	lastY = e.clientY;
-
-	requestRender();
-});
-
-// =====================================================
-// GEOMETRY
-// =====================================================
 
 const ico = createIcosahedron();
 
@@ -496,24 +484,6 @@ const cells = buildDual(
     geo.vertices,
     geo.faces
 );
-
-// =====================================================
-// RENDER ON DEMAND
-// =====================================================
-
-function requestRender() {
-    if (!needsRender) {
-        needsRender = true;
-        requestAnimationFrame(renderLoop);
-    }
-}
-
-function renderLoop() {
-    if (!needsRender) return;
-
-    needsRender = false;
-    render();
-}
 
 // =====================================================
 // PROJECTION
@@ -673,10 +643,6 @@ function sampleTexture(u, v) {
     return `rgb(${data[0]},${data[1]},${data[2]})`;
 }
 
-// =====================================================
-// BACKFACE CULLING
-// =====================================================
-
 function isFaceVisible(pts) {
 
     let sum = 0;
@@ -690,6 +656,20 @@ function isFaceVisible(pts) {
     }
 
     return sum < 0;
+}
+
+function requestRender() {
+    if (!needsRender) {
+        needsRender = true;
+        requestAnimationFrame(renderLoop);
+    }
+}
+
+function renderLoop() {
+    if (!needsRender) return;
+
+    needsRender = false;
+    render();
 }
 
 // =====================================================
