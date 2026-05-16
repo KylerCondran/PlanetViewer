@@ -60,6 +60,11 @@ let needsRender = false;
 let globeRotation = [0, 0, 0, 1];
 let cellColorCache = [];
 
+// Momentum/velocity
+let angularVelocity = [0, 0, 0]; // axis and magnitude stored as [vx, vy, vz]
+const MOMENTUM_DAMPING = 0.98; // friction (0-1, lower = more damping)
+const VELOCITY_THRESHOLD = 0.0001; // stop spinning when velocity is negligible
+
 // =====================================================
 // BUTTONS
 // =====================================================
@@ -138,17 +143,27 @@ const camera = {
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
+let lastDx = 0;
+let lastDy = 0;
 
 canvas.addEventListener("mousedown", e => {
-
     dragging = true;
 
     lastX = e.clientX;
     lastY = e.clientY;
+    lastDx = 0;
+    lastDy = 0;
 });
 
 window.addEventListener("mouseup", () => {
     dragging = false;
+    // Apply momentum from last frame's velocity
+    const rotY = quatFromAxisAngle([0, 1, 0], -lastDx * 0.005);
+    const right = rotateVectorByQuat([1, 0, 0], globeRotation);
+    const rotX = quatFromAxisAngle(right, -lastDy * 0.005);
+
+    angularVelocity = [rotX[0], rotX[1], rotX[2]];
+    angularVelocity.push(rotY); // store both rotations
 });
 
 window.addEventListener("mousemove", e => {
@@ -173,6 +188,8 @@ window.addEventListener("mousemove", e => {
 
     lastX = e.clientX;
     lastY = e.clientY;
+    lastDx = dx;
+    lastDy = dy;
 
     requestRender();
 });
@@ -682,10 +699,32 @@ function requestRender() {
 }
 
 function renderLoop() {
+    if (!needsRender && !hasSignificantVelocity()) return;
+
+    // Apply momentum when not dragging
+    if (!dragging && hasSignificantVelocity()) {
+        const rotY = quatFromAxisAngle([0, 1, 0], -lastDx * 0.005);
+        const right = rotateVectorByQuat([1, 0, 0], globeRotation);
+        const rotX = quatFromAxisAngle(right, -lastDy * 0.005);
+
+        globeRotation = multiplyQuat(rotX, globeRotation);
+        globeRotation = multiplyQuat(rotY, globeRotation);
+
+        lastDx *= MOMENTUM_DAMPING;
+        lastDy *= MOMENTUM_DAMPING;
+
+        needsRender = true;
+    }
+
     if (!needsRender) return;
 
     needsRender = false;
     render();
+    requestAnimationFrame(renderLoop);
+}
+
+function hasSignificantVelocity() {
+    return Math.abs(lastDx) > VELOCITY_THRESHOLD || Math.abs(lastDy) > VELOCITY_THRESHOLD;
 }
 
 // =====================================================
