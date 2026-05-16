@@ -58,6 +58,7 @@ const SUBDIVISIONS = 7;
 const SHOW_LABELS = false;
 let needsRender = false;
 let globeRotation = [0, 0, 0, 1];
+let cellColorCache = [];
 
 // =====================================================
 // BUTTONS
@@ -65,14 +66,20 @@ let globeRotation = [0, 0, 0, 1];
 
 function loadMoon() {
     earthImage.src = "./img/moon.jpg"
+    cellColorCache = [];
+    requestRender();
 }
 
 function loadEarth() {
     earthImage.src = "./img/earth.jpg"
+    cellColorCache = [];
+    requestRender();
 }
 
 function loadMars() {
     earthImage.src = "./img/mars.jpg"
+    cellColorCache = [];
+    requestRender();
 }
 
 function zoomIn() {
@@ -102,6 +109,7 @@ earthImage.onload = () => {
     textureCanvas.width = earthImage.width;
     textureCanvas.height = earthImage.height;
     textureCtx.drawImage(earthImage, 0, 0);
+    cellColorCache = [];
     requestRender();
 };
 
@@ -489,11 +497,20 @@ const cells = buildDual(
 // PROJECTION
 // =====================================================
 
+function getCellColor(cell) {
+    if (cellColorCache[cell.id] !== undefined) {
+        return cellColorCache[cell.id];
+    }
+
+    const uv = sphereToUV(cell.center);
+    const color = sampleTexture(uv.u, uv.v);
+    cellColorCache[cell.id] = color;
+    return color;
+}
+
 function render() {
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-
 
     // ---------------------------------------------
     // PROJECT FACE CENTERS ONCE
@@ -581,8 +598,8 @@ function render() {
         ctx.closePath();
 
         //ctx.fillStyle = cell.id % 2 === 0 ? "#f59e0b": "#22c55e";
-		const uv = sphereToUV(cell.center);
-		ctx.fillStyle = sampleTexture(uv.u, uv.v);
+		//const uv = sphereToUV(cell.center);
+        ctx.fillStyle = getCellColor(cell);
 
         ctx.fill();
 
@@ -639,7 +656,6 @@ function sampleTexture(u, v) {
     const y = Math.floor(v * textureCanvas.height);
 
     const data = textureCtx.getImageData(x, y, 1, 1).data;
-	//console.log('1');
     return `rgb(${data[0]},${data[1]},${data[2]})`;
 }
 
@@ -659,7 +675,7 @@ function isFaceVisible(pts) {
 }
 
 function requestRender() {
-    if (!needsRender) {
+    if (!needsRender && earthReady) {
         needsRender = true;
         requestAnimationFrame(renderLoop);
     }
