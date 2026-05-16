@@ -173,12 +173,9 @@ window.addEventListener("mousemove", e => {
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
 
+    // Both rotations in world space for consistent screen-relative movement
     const rotY = quatFromAxisAngle([0, 1, 0], -dx * 0.005);
-
-    // rotate around globe-local X axis
-    const right = rotateVectorByQuat([1, 0, 0], globeRotation);
-
-    const rotX = quatFromAxisAngle(right, -dy * 0.005);
+    const rotX = quatFromAxisAngle([1, 0, 0], -dy * 0.005);
 
     // apply incrementally
     globeRotation = multiplyQuat(rotX, globeRotation);
@@ -704,8 +701,7 @@ function renderLoop() {
     // Apply momentum when not dragging
     if (!dragging && hasSignificantVelocity()) {
         const rotY = quatFromAxisAngle([0, 1, 0], -lastDx * 0.005);
-        const right = rotateVectorByQuat([1, 0, 0], globeRotation);
-        const rotX = quatFromAxisAngle(right, -lastDy * 0.005);
+        const rotX = quatFromAxisAngle([1, 0, 0], -lastDy * 0.005);
 
         globeRotation = multiplyQuat(rotX, globeRotation);
         globeRotation = multiplyQuat(rotY, globeRotation);
