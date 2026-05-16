@@ -40,12 +40,20 @@
 <div id="ui">
     <b>Planet Viewer</b><br>
     Drag mouse = rotate camera<br>
-	<button onclick="loadEarth()">Earth</button>
-	<button onclick="loadMoon()">Moon</button>
-	<button onclick="loadMars()">Mars</button>
-	<br>
-	<button onclick="zoomIn()">+</button>
-	<button onclick="zoomOut()">-</button>
+    <button onclick="loadSun()">Sun</button>
+    <button onclick="loadMercury()">Mercury</button>
+    <button onclick="loadVenus()">Venus</button>
+    <button onclick="loadEarth()">Earth</button>
+    <button onclick="loadMoon()">Moon</button>
+    <br />
+    <button onclick="loadMars()">Mars</button>
+    <button onclick="loadJupiter()">Jupiter</button>
+    <button onclick="loadSaturn()">Saturn</button>
+    <button onclick="loadUranus()">Uranus</button>
+    <button onclick="loadNeptune()">Neptune</button>
+    <br>
+    <button onclick="zoomIn()">+</button>
+    <button onclick="zoomOut()">-</button>
 </div>
 
 <script>
@@ -69,8 +77,20 @@ const VELOCITY_THRESHOLD = 0.0001; // stop spinning when velocity is negligible
 // BUTTONS
 // =====================================================
 
-function loadMoon() {
-    earthImage.src = "./img/moon.jpg"
+function loadSun() {
+    earthImage.src = "./img/sun.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadMercury() {
+    earthImage.src = "./img/mercury.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadVenus() {
+    earthImage.src = "./img/venus.jpg"
     cellColorCache = [];
     requestRender();
 }
@@ -81,8 +101,38 @@ function loadEarth() {
     requestRender();
 }
 
+function loadMoon() {
+    earthImage.src = "./img/moon.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
 function loadMars() {
     earthImage.src = "./img/mars.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadJupiter() {
+    earthImage.src = "./img/jupiter.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadSaturn() {
+    earthImage.src = "./img/saturn.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadUranus() {
+    earthImage.src = "./img/uranus.jpg"
+    cellColorCache = [];
+    requestRender();
+}
+
+function loadNeptune() {
+    earthImage.src = "./img/neptune.jpg"
     cellColorCache = [];
     requestRender();
 }
